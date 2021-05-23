@@ -1,0 +1,139 @@
+apply plugin: 'java'
+apply plugin: 'maven-publish'
+apply plugin: 'signing'
+
+repositories {
+    mavenCentral()
+}
+
+
+task sourceJar(type: Jar) {
+    classifier "sources"
+    from sourceSets.main.allJava
+}
+
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    classifier "javadoc"
+    from javadoc.destinationDir
+}
+
+artifacts {
+    archives jar
+    archives sourceJar
+    archives javadocJar
+}
+
+    signing {
+        sign configurations.archives
+    }
+
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            customizePom(pom)
+            groupId 'com.winopay'
+            artifactId 'paylense-sdk'
+            version '1.0.0'
+
+            from components.java
+
+            // create the sign pom artifact
+            pom.withXml {
+                def pomFile = file("${project.buildDir}/generated-pom.xml")
+                writeTo(pomFile)
+                def pomAscFile = signing.sign(pomFile).signatureFiles[0]
+                artifact(pomAscFile) {
+                    classifier = null
+                    extension = 'pom.asc'
+                }
+            }
+
+            artifact(sourceJar) {
+                classifier = 'sources'
+            }
+            artifact(javadocJar) {
+                classifier = 'javadoc'
+            }
+
+            // create the signed artifacts
+            project.tasks.signArchives.signatureFiles.each {
+                artifact(it) {
+                    def matcher = it.file =~ /-(sources|javadoc)\.jar\.asc$/
+                    if (matcher.find()) {
+                        classifier = matcher.group(1)
+                    } else {
+                        classifier = null
+                    }
+                    extension = 'jar.asc'
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            url "https://oss.sonatype.org/service/local/staging/deploy/maven2"
+            credentials {
+                username hasProperty('sonatypeUsername') ? sonatypeUsername : System.getenv('sonatypeUsername')
+                password hasProperty('sonatypePassword') ? sonatypePassword : System.getenv('sonatypePassword')
+            }
+        }
+    }
+}
+
+def customizePom(pom) {
+    pom.withXml {
+        def root = asNode()
+
+        // eliminate test-scoped dependencies (no need in maven central POMs)
+        root.dependencies.removeAll { dep ->
+            dep.scope == "test"
+        }
+
+        // add all items necessary for maven central publication
+        root.children().last() + {
+            resolveStrategy = Closure.DELEGATE_FIRST
+
+            description 'Paylense Java SDK'
+            name 'https://apidocs.paylense.com'
+            url 'https://github.com/winopay/paylense-api-sdk'
+            organization {
+                name 'com.winopay'
+                url 'https://winopay.com'
+            }
+            issueManagement {
+                system 'GitHub'
+                url 'https://github.com/winopay/paylense-api-sdk/issues'
+            }
+            licenses {
+                license {
+                    name 'The MIT License'
+                    url 'https://raw.githubusercontent.com/winopay/paylense-api-sdk/master/LICENSE'
+                    distribution 'repo'
+                }
+            }
+            scm {
+                url 'https://github.com/winopay/paylense-api-sdk'
+                connection 'scm:git@github.com/winopay/paylense-api-sdk.git'
+                developerConnection 'scm:git:ssh://git@github.com:winopay/paylense-api-sdk.git'
+            }
+            developers {
+                developer {
+                    name 'Winopay'
+                }
+            }
+        }
+    }
+}
+
+model {
+    tasks.generatePomFileForMavenJavaPublication {
+        destination = file("$buildDir/generated-pom.xml")
+    }
+    tasks.publishMavenJavaPublicationToMavenLocal {
+        dependsOn project.tasks.signArchives
+    }
+    tasks.publishMavenJavaPublicationToMavenRepository {
+        dependsOn project.tasks.signArchives
+    }
+}
