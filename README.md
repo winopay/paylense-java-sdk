@@ -1,4 +1,4 @@
-# Paylense API Java Client[STILL UNDER DEVELOPMETN]</h1>
+# Paylense API Java Client[STILL UNDER DEVELOPMENT]</h1>
 
 <div>
   <a href="https://spectrum.chat/paylense-api-sdk/">Spectrum</a>
